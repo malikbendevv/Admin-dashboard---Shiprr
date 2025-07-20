@@ -40,7 +40,7 @@ const formatDate = (dateString: string) => {
 const UsersPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
-  const [formType, setFormType] = useState("");
+  const [formType, setFormType] = useState<"add" | "edit">("add");
   const [selectedUser, setSelectedUser] = useState("");
   const [open, setOpen] = useState(false);
 

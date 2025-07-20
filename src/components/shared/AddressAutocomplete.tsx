@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 export interface AddressAutocompleteProps {
   id?: string;
@@ -118,6 +118,11 @@ export default function AddressAutocomplete({
       setSuggestionsOpen(false);
     }
   };
+
+  useEffect(() => {
+    console.log("Setting the query", id, value);
+    setQuery(value || "");
+  }, [value]);
 
   return (
     <div className="relative">
