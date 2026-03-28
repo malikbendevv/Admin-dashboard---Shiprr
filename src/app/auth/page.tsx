@@ -1,84 +1,110 @@
 "use client";
 
-import api from "@/lib/axiosInstance";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import api from "@/lib/axiosInstance";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 
-export default function Auth() {
-  const [user, setUser] = useState("");
-  const [error] = useState("");
+const loginSchema = z.object({
+  email: z.email("Enter a valid email"),
+  password: z.string().min(1, "Password is required"),
+});
 
-  console.log({ user });
+type LoginFormValues = z.infer<typeof loginSchema>;
+
+export default function AuthPage() {
+  const router = useRouter();
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const form = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
+  });
+
+  const onSubmit = async (values: LoginFormValues) => {
+    setServerError(null);
+    try {
+      await api.post("/auth/login", values);
+      router.push("/");
+      router.refresh();
+    } catch (err: unknown) {
+      const message = (
+        err as { response?: { data?: { message?: string | string[] } } }
+      )?.response?.data?.message;
+      if (Array.isArray(message)) {
+        setServerError(message[0]);
+      } else {
+        setServerError(message ?? "Invalid email or password.");
+      }
+    }
+  };
 
   return (
-    <div className="flex gap-5">
-      {error && <p>{error}</p>}
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <Card className="w-full max-w-md shadow-md">
+        <CardHeader className="space-y-1 pb-4">
+          <CardTitle className="text-2xl font-bold text-center text-gray-900">
+            Admin Panel
+          </CardTitle>
+          <p className="text-sm text-gray-500 text-center">
+            Sign in to your account
+          </p>
+        </CardHeader>
 
-      <button
-        className="cursor-pointer"
-        onClick={() =>
-          api
-            .post("/users", {
-              email: "test7@gmail.com",
-              password: "malikK8*",
-              firstName: "malik5",
-              lastName: "ben5",
-              role: "driver",
-              phoneNumber: "+213000007",
-            })
-            .then((res) => setUser(res.data))
-            .catch((err) => {
-              console.log(err.response.data);
-              // setError(err);
-            })
-        }
-      >
-        Create a user
-      </button>
-      <button
-        className="cursor-pointer"
-        onClick={() =>
-          api
-            .post("/auth/login", {
-              email: "test@gmail.com",
-              password: "malikK8*",
-            })
-            .then((res) => setUser(res.data))
-            .catch((err) => {
-              console.log(err);
-              // setError(err);
-            })
-        }
-      >
-        Login
-      </button>
-      <button
-        className="cursor-pointer"
-        onClick={() =>
-          api
-            .post("/auth/logout")
-            .then((res) => setUser(res.data))
-            .catch((err) => {
-              console.log(err.response.data);
-              // setError(err);
-            })
-        }
-      >
-        Logout
-      </button>
-      <button
-        className="cursor-pointer"
-        onClick={() =>
-          api
-            .get("/auth/test-guard")
-            .then((res) => console.log("Guard tested successfully", { res }))
-            .catch((err) => {
-              console.log("test guard error", err.response.data);
-              // setError(err);
-            })
-        }
-      >
-        Test guard
-      </button>
+        <CardContent>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {serverError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-md px-3 py-2">
+                {serverError}
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="admin@example.com"
+                {...form.register("email")}
+              />
+              {form.formState.errors.email && (
+                <p className="text-sm text-red-600">
+                  {form.formState.errors.email.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                {...form.register("password")}
+              />
+              {form.formState.errors.password && (
+                <p className="text-sm text-red-600">
+                  {form.formState.errors.password.message}
+                </p>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full bg-blue-600 hover:bg-blue-700 mt-2"
+              disabled={form.formState.isSubmitting}
+            >
+              {form.formState.isSubmitting ? "Signing in..." : "Sign in"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

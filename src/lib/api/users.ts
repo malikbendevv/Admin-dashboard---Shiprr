@@ -1,7 +1,6 @@
 import api from "@/lib/axiosInstance";
-import { Params, User, UsersResponse } from "@/hooks/useUsers";
+import type { Params, User, UsersResponse } from "@/types";
 
-// Client-safe API functions only
 export async function fetchUsers(params: Params): Promise<UsersResponse> {
   const res = await api.get("/users", { params });
   return res.data;

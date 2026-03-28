@@ -10,9 +10,7 @@ import DashboardLayout from "@/components/dashboard/dashboard-layout";
 export default async function Home() {
   const queryClient = new QueryClient();
 
-  console.log("Google api key", process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
   try {
-    console.log("trying to fetch");
     await queryClient.prefetchQuery({
       queryKey: ["users", { page: 1, limit: 1 }],
       queryFn: async () => {
@@ -21,11 +19,7 @@ export default async function Home() {
           limit: 1,
         });
 
-        console.log("result fro mdashboard home", result);
-
         if (!result) {
-          console.log("no result fro mdashboard home ", result);
-
           throw new Error("Not authenticated");
         }
 
@@ -33,7 +27,6 @@ export default async function Home() {
       },
     });
   } catch (e) {
-    console.log("error", e);
     if (e instanceof NeedsRefreshError) {
       return <ClientRefresh />;
     }

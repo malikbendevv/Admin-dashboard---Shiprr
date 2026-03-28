@@ -5,21 +5,13 @@ export async function refreshTokenClientSide() {
       method: "POST",
       credentials: "include",
     });
-    console.log("Refresh response status:", res.status);
-    console.log(
-      "Refresh response headers:",
-      Object.fromEntries(res.headers.entries())
-    );
-
     if (res.ok) {
-      const data = await res.json();
-      console.log("Refresh response data:", data);
-      return true; // Token refreshed successfully
+      await res.json();
+      return true;
     }
 
-    const errorData = await res.json();
-    console.log("Refresh error:", errorData);
-    return false; // Refresh failed
+    await res.json();
+    return false;
   } catch (error) {
     console.error("Token refresh failed:", error);
     return false;

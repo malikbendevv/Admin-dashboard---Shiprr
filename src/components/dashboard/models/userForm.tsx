@@ -19,9 +19,11 @@ import React, { useState } from "react";
 import AddressAutocomplete from "@/components/shared/AddressAutocomplete";
 import MapPicker from "@/components/shared/MapPicker";
 import { geocodeLatLng } from "@/lib/geoCode";
-import api from "@/lib/axiosInstance";
+import { addUser, editUser } from "@/lib/api/users";
+import { useQueryClient } from "@tanstack/react-query";
+import type { Address as AddressType } from "@/types";
 
-// Address schema
+// Address schema (shape matches the Address type from @/types)
 const addressSchema = z.object({
   street: z.string().optional(),
   street2: z.string().optional(),
@@ -32,43 +34,7 @@ const addressSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
 });
-
-// Update password validation in userSchema
-const userSchema = z.object({
-  firstName: z.string().min(1, "First name required"),
-  lastName: z.string().min(1, "Last name required"),
-  email: z.email(),
-  phoneNumber: z.string(),
-  password: z
-    .string()
-    .min(8, { message: "Password must be at least 8 characters" })
-    .regex(/[A-Z]/, {
-      message: "Password must contain at least 1 uppercase letter",
-    })
-    .regex(/[a-z]/, {
-      message: "Password must contain at least 1 lowercase letter",
-    })
-    .regex(/[0-9]/, { message: "Password must contain at least 1 number" })
-    .regex(/[!@#$%^&*(),.?\":{}|<>]/, {
-      message: "Password must contain at least 1 special character",
-    })
-    .refine((val) => !/\s/.test(val), {
-      message: "Password must not contain spaces",
-    })
-    .optional(),
-  role: z.enum(["admin", "customer", "driver"]),
-  addresses: z.array(addressSchema).min(1, "At least one address is required"),
-});
-
-type UserFormValues = z.infer<typeof userSchema>;
-
-type Address = z.infer<typeof addressSchema>;
-
-interface UserFormProps {
-  mode: "add" | "edit";
-  initialValues?: Partial<UserFormValues>;
-  onSuccess?: () => void;
-}
+type Address = AddressType;
 
 function normalizeAddresses(addresses: unknown): Address[] {
   const arr: Record<string, unknown>[] = Array.isArray(addresses)
@@ -98,7 +64,6 @@ function normalizeAddresses(addresses: unknown): Address[] {
   }));
 }
 
-// Utility to build a full address string from address object
 function buildFullAddress(address: Partial<Address> = {}) {
   return [
     address.street,
@@ -111,11 +76,60 @@ function buildFullAddress(address: Partial<Address> = {}) {
     .join(", ");
 }
 
-export default function UserForm({
-  mode,
-  initialValues,
-  onSuccess,
-}: UserFormProps) {
+// Move passwordField and userSchema outside the component as functions
+function passwordField(mode: "add" | "edit") {
+  return mode === "add"
+    ? z
+        .string()
+        .min(8, { message: "Password must be at least 8 characters" })
+        .regex(/[A-Z]/, {
+          message: "Password must contain at least 1 uppercase letter",
+        })
+        .regex(/[a-z]/, {
+          message: "Password must contain at least 1 lowercase letter",
+        })
+        .regex(/[0-9]/, {
+          message: "Password must contain at least 1 number",
+        })
+        .regex(/[!@#$%^&*(),.?\":{}|<>]/, {
+          message: "Password must contain at least 1 special character",
+        })
+        .refine((val) => !/\s/.test(val), {
+          message: "Password must not contain spaces",
+        })
+    : z.string().optional();
+}
+
+function userSchema(mode: "add" | "edit") {
+  return z.object({
+    firstName: z.string().min(1, "First name required"),
+    lastName: z.string().min(1, "Last name required"),
+    email: z.email(),
+    phoneNumber: z
+      .string()
+      .min(1, "Phone number is required")
+      .regex(/^\+?[\d\s\-()]{8,}$/, {
+        message:
+          "Enter a valid phone number (e.g., +1234567890 or 123-456-7890)",
+      }),
+    password: passwordField(mode),
+    role: z.enum(["admin", "customer", "driver"]),
+    addresses: z
+      .array(addressSchema)
+      .min(1, "At least one address is required"),
+  });
+}
+
+type UserFormValues = z.infer<ReturnType<typeof userSchema>>;
+
+interface UserFormProps {
+  mode: "add" | "edit";
+  initialValues?: Partial<UserFormValues>;
+  onSuccess?: () => void;
+}
+
+export default function UserForm(props: UserFormProps) {
+  const { mode, initialValues, onSuccess } = props;
   const [openMap, setOpenMap] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -123,8 +137,10 @@ export default function UserForm({
   const isEdit = mode === "edit";
   const addresses = normalizeAddresses(initialValues?.addresses);
 
+  const queryClient = useQueryClient();
+
   const form = useForm<UserFormValues>({
-    resolver: zodResolver(userSchema),
+    resolver: zodResolver(userSchema(mode)),
     defaultValues: {
       firstName: initialValues?.firstName || "",
       lastName: initialValues?.lastName || "",
@@ -141,61 +157,77 @@ export default function UserForm({
     name: "addresses",
   });
 
-  console.log("form errors", form.formState.errors);
+  // Add a type for initialValues with id
+  type InitialValuesWithId = Partial<UserFormValues> & { id?: string };
 
   const onSubmit: SubmitHandler<UserFormValues> = async (values) => {
     setLoading(true);
     setSuccess(false);
-    // Transform or clean up address if needed before sending to backend
-    // e.g., remove empty street2, convert lat/lng to null if not set, etc.
-
+    const submitValues = { ...values };
+    if (isEdit && !submitValues.password) {
+      delete submitValues.password;
+    }
     try {
-      console.log("Submitting values:", values);
-
-      const res = await api.post("http://localhost:5000/users", values);
-
-      console.log("Response from the api", { res });
-
-      if (res.status === 201) {
+      let res;
+      if (
+        isEdit &&
+        initialValues &&
+        (initialValues as InitialValuesWithId).id
+      ) {
+        res = await editUser(
+          (initialValues as InitialValuesWithId).id!,
+          submitValues
+        );
+      } else {
+        res = await addUser(submitValues);
+      }
+      if (res.status === 200 || res.status === 201) {
         setSuccess(true);
         setTimeout(() => {
           setSuccess(false);
+          queryClient.invalidateQueries({ queryKey: ["users"] });
           if (onSuccess) onSuccess();
-        }, 3000); // Hide success after 3s
+        }, 3000);
       }
     } catch (err) {
-      // Check for Axios error and 400 status
-      if (err.response && err.response.status === 400) {
-        const messages = err.response.data.message;
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "response" in err &&
+        (
+          err as {
+            response?: { status?: number; data?: { message?: string[] } };
+          }
+        ).response &&
+        (err as { response: { status: number } }).response.status === 400
+      ) {
+        const messages = (err as { response: { data: { message: string[] } } })
+          .response.data.message;
         if (Array.isArray(messages)) {
           messages.forEach((msg: string) => {
-            // Try to match "addresses.N.field" pattern
             const addressMatch = msg.match(
               /^addresses\.(\d+)\.([a-zA-Z0-9_]+) (.+)$/
             );
             if (addressMatch) {
-              const [, idx, field, message] = addressMatch;
-              // Set error for addresses[idx].field
-              form.setError(`addresses.${idx}.${field}` as any, {
-                message: msg,
-              });
+              const [, idx, field] = addressMatch;
+              form.setError(
+                `addresses.${idx}.${field}` as keyof UserFormValues,
+                {
+                  message: msg,
+                }
+              );
               return;
             }
-            // Try to match "field should not be empty" or similar
             const fieldMatch = msg.match(/^([a-zA-Z0-9_]+) (.+)$/);
             if (fieldMatch) {
-              const [_, field, message] = fieldMatch;
-              form.setError(field as any, { message: msg });
+              const [, field] = fieldMatch;
+              form.setError(field as keyof UserFormValues, { message: msg });
               return;
             }
-            // Otherwise, set a general error (optional)
-            // form.setError("root", { message: msg });
           });
         }
       } else {
-        // Handle other errors (network, 500, etc.)
-        // Optionally set a general error message
-        form.setError("root", {
+        form.setError("root" as keyof UserFormValues, {
           message: "Something went wrong. Please try again.",
         });
       }
@@ -208,7 +240,7 @@ export default function UserForm({
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
       {success && (
         <div className="text-green-600 text-sm font-semibold">
-          User created successfully!
+          {isEdit ? "User updated successfully!" : "User created successfully!"}
         </div>
       )}
       <Input {...form.register("firstName")} placeholder="First Name" />
@@ -287,7 +319,7 @@ export default function UserForm({
             htmlFor="google-autocomplete"
             className="block text-sm font-medium text-gray-700"
           >
-            Search Address (first address)
+            {/* Search Address (first address) */}
           </label>
         </div>
         {fields.map((field, idx) => (
@@ -317,7 +349,6 @@ export default function UserForm({
                 onClose={() => setOpenMap(false)}
                 onSelect={async (lat, lng) => {
                   const address = await geocodeLatLng(lat, lng);
-                  console.log("address from Map picker", address);
                   if (address) {
                     form.setValue(`addresses.${idx}.street`, address.street, {
                       shouldValidate: true,
@@ -358,7 +389,6 @@ export default function UserForm({
             <AddressAutocomplete
               id={`google-autocomplete-${idx}`}
               onSelect={(address) => {
-                console.log("address from autoComplete", address);
                 form.setValue(`addresses.${idx}.street`, address.street || "", {
                   shouldValidate: true,
                 });

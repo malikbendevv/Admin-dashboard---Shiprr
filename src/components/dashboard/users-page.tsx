@@ -21,10 +21,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
-import { useUsers, User } from "@/hooks/useUsers";
+import { useUsers } from "@/hooks/useUsers";
+import type { User, Address } from "@/types";
+import { deleteUser } from "@/lib/api/users";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import UserForm from "./models/userForm";
+import DeleteUserModal from "./DeleteUserModal";
+import { useQueryClient } from "@tanstack/react-query";
 
 // Extend dayjs with relative time plugin
 dayjs.extend(relativeTime);
@@ -37,12 +41,48 @@ const formatDate = (dateString: string) => {
   return date.format("MMM D, YYYY h:mm A"); // e.g., "Jul 10, 2025 12:57 PM"
 };
 
+// Helper to convert API user to form user (role normalization)
+function toFormUser(user: User | null):
+  | Partial<{
+      firstName: string;
+      lastName: string;
+      email: string;
+      phoneNumber: string;
+      password?: string;
+      role: "admin" | "customer" | "driver";
+      addresses?: Address[];
+      id?: string;
+    }>
+  | undefined {
+  if (!user) return undefined;
+  // Normalize role to the allowed union
+  let role: "admin" | "customer" | "driver" = "customer";
+  if (
+    user.role === "admin" ||
+    user.role === "customer" ||
+    user.role === "driver"
+  ) {
+    role = user.role;
+  }
+  return {
+    ...user,
+    id: user.id ? String(user.id) : undefined,
+    role,
+    password: undefined, // never prefill password
+  };
+}
+
 const UsersPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const [formType, setFormType] = useState<"add" | "edit">("add");
-  const [selectedUser, setSelectedUser] = useState("");
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [open, setOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // Sorting state (only for createdAt)
   const [sortField] = useState<string>("createdAt");
@@ -66,15 +106,6 @@ const UsersPage = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  const addOrEditUser = (type: string) => {
-    if (type === "add") {
-      setFormType("add");
-    }
-    {
-      setFormType("edit");
-    }
-  };
-
   // Handle sort change (only for createdAt)
   const handleSort = () => {
     setSortOrder(sortOrder === "asc" ? "desc" : "asc");
@@ -83,7 +114,7 @@ const UsersPage = () => {
 
   // Handle role filter change
   const handleRoleFilter = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setRoleFilter(e.target.value);
+    setRoleFilter(e.target.value as "" | "admin" | "customer" | "driver");
     setPage(1); // Reset to first page when filtering
   };
 
@@ -96,8 +127,6 @@ const UsersPage = () => {
     role: roleFilter,
   });
 
-  console.log({ data });
-
   // Handle the new nested data structure
   const users = (data?.users || []) as User[];
   const pagination = data?.pagination;
@@ -107,18 +136,6 @@ const UsersPage = () => {
   const totalPages = pagination?.totalPages || Math.ceil(total / limit);
   const hasNextPage = pagination?.hasNextPage || false;
   const hasPreviousPage = pagination?.hasPreviousPage || false;
-
-  // Debug pagination values
-  console.log("Pagination Debug:", {
-    total,
-    limit,
-    totalPages,
-    currentPage,
-    hasNextPage,
-    hasPreviousPage,
-    calculatedTotalPages: Math.ceil(total / limit),
-    paginationFromBackend: pagination?.totalPages,
-  });
 
   // Remove frontend filtering since we're now using backend search
   const filteredUsers = users;
@@ -185,6 +202,28 @@ const UsersPage = () => {
     );
   }
 
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await deleteUser(userToDelete.id);
+      setDeleteModalOpen(false);
+      setUserToDelete(null);
+      await queryClient.invalidateQueries({ queryKey: ["users"] });
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "message" in err) {
+        setDeleteError(
+          (err as { message?: string }).message || "Failed to delete user"
+        );
+      } else {
+        setDeleteError("Failed to delete user");
+      }
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -243,7 +282,7 @@ const UsersPage = () => {
             <TableHeader>
               <TableRow>
                 <TableHead
-                  className="min-w-[120px] max-w-[180px] cursor-pointer select-none"
+                  className="min-w-[120px] w-[170px] max-w-[180px] cursor-pointer select-none"
                   onClick={() => handleSort()}
                 >
                   Name
@@ -254,7 +293,7 @@ const UsersPage = () => {
                   )}
                 </TableHead>
                 <TableHead
-                  className="min-w-[180px] max-w-[240px] cursor-pointer select-none"
+                  className="min-w-[180px]  w-[170px] max-w-[240px] cursor-pointer select-none"
                   onClick={() => handleSort()}
                 >
                   Email
@@ -265,7 +304,7 @@ const UsersPage = () => {
                   )}
                 </TableHead>
                 <TableHead
-                  className="min-w-[100px] max-w-[120px] cursor-pointer select-none"
+                  className="min-w-[100px]  w-[170px] max-w-[120px] cursor-pointer select-none"
                   onClick={() => handleSort()}
                 >
                   Role
@@ -276,7 +315,7 @@ const UsersPage = () => {
                   )}
                 </TableHead>
                 <TableHead
-                  className="min-w-[100px] max-w-[120px] cursor-pointer select-none"
+                  className="min-w-[100px]  w-[170px] max-w-[120px] cursor-pointer select-none"
                   onClick={() => handleSort()}
                 >
                   Status
@@ -287,7 +326,7 @@ const UsersPage = () => {
                   )}
                 </TableHead>
                 <TableHead
-                  className="min-w-[140px] max-w-[180px] cursor-pointer select-none"
+                  className="min-w-[140px]  w-[170px] max-w-[180px] cursor-pointer select-none"
                   onClick={() => handleSort()}
                 >
                   Join Date
@@ -332,13 +371,26 @@ const UsersPage = () => {
                         <Button variant="ghost" size="sm">
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setFormType("edit");
+                            setOpen(true);
+                            setSelectedUser(user);
+                          }}
+                        >
                           <Edit className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-700"
+                          onClick={() => {
+                            setUserToDelete(user);
+                            setDeleteModalOpen(true);
+                            setDeleteError(null);
+                          }}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -360,7 +412,7 @@ const UsersPage = () => {
 
               <UserForm
                 mode={formType}
-                initialValues={selectedUser}
+                initialValues={toFormUser(selectedUser)}
                 onSuccess={() => setOpen(false)}
               />
             </DialogContent>
@@ -468,6 +520,26 @@ const UsersPage = () => {
           )}
         </CardContent>
       </Card>
+
+      <DeleteUserModal
+        open={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setUserToDelete(null);
+        }}
+        onConfirm={handleDeleteUser}
+        user={
+          userToDelete
+            ? { ...userToDelete, id: String(userToDelete.id) }
+            : undefined
+        }
+        loading={deleteLoading}
+      />
+      {deleteError && (
+        <div className="text-red-600 text-sm font-semibold mt-2">
+          {deleteError}
+        </div>
+      )}
     </div>
   );
 };

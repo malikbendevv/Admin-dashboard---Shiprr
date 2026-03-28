@@ -7,19 +7,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use(
-  (config) => {
-    console.log(`[Request] ${config.method?.toUpperCase()} ${config.url}`);
-    // Log withCredentials flag
-    console.log("withCredentials:", config.withCredentials);
-    // Log all request headers
-    console.log("Request headers:", config.headers);
-    // Log cookies accessible to JS (not HTTP-only cookies)
-    console.log(
-      "document.cookie:",
-      typeof document !== "undefined" ? document.cookie : "Not in browser"
-    );
-    return config;
-  },
+  (config) => config,
   (error) => Promise.reject(error)
 );
 

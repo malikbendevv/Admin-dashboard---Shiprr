@@ -1,11 +1,19 @@
 import { getServerUser } from "@/lib/serverAuth";
-// import api from "@/lib/axiosInstance";
+import type { NeedsRefresh, User } from "@/types";
 import ClientRefresh from "@/components/ClientRefresh";
+
+function isNeedsRefresh(val: unknown): val is NeedsRefresh {
+  return (
+    typeof val === "object" &&
+    val !== null &&
+    (val as NeedsRefresh).needsRefresh === true
+  );
+}
 
 export default async function ProtectedPage() {
   const user = await getServerUser();
 
-  if ((user as any)?.needsRefresh) {
+  if (isNeedsRefresh(user)) {
     return <ClientRefresh />;
   }
 
@@ -13,10 +21,12 @@ export default async function ProtectedPage() {
     return <div>You are not logged in.</div>;
   }
 
+  const typedUser = user as User;
+
   return (
     <div>
       <h1>Protected Page</h1>
-      <p>Welcome, {user.email}!</p>
+      <p>Welcome, {typedUser.email}!</p>
     </div>
   );
 }

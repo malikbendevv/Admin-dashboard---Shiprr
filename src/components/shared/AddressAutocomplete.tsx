@@ -17,8 +17,6 @@ export interface AddressAutocompleteProps {
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-console.log("Google api key", process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
-
 interface Suggestion {
   id: string;
   displayName?: { text: string };
@@ -120,7 +118,6 @@ export default function AddressAutocomplete({
   };
 
   useEffect(() => {
-    console.log("Setting the query", id, value);
     setQuery(value || "");
   }, [value]);
 
